@@ -12,6 +12,7 @@ import (
 	"github.com/PavelAgarkov/service-pkg/logger"
 	logger "github.com/PavelAgarkov/service-pkg/logger/zap_engine"
 	"github.com/PavelAgarkov/service-pkg/utils"
+
 	"github.com/gorilla/mux"
 	"github.com/rs/xid"
 	"go.uber.org/zap"

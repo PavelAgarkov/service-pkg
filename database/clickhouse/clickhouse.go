@@ -9,11 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2"
-	ch "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/PavelAgarkov/service-pkg/logger"
 	logger "github.com/PavelAgarkov/service-pkg/logger/zap_engine"
 	"github.com/PavelAgarkov/service-pkg/utils"
+
+	"github.com/ClickHouse/clickhouse-go/v2"
+	ch "github.com/ClickHouse/clickhouse-go/v2"
 )
 
 type Clickhouse struct {
@@ -21,6 +22,7 @@ type Clickhouse struct {
 	Port            int           `mapstructure:"port"     envconfig:"PORT"`
 	Username        string        `mapstructure:"username" envconfig:"USERNAME"`
 	Password        string        `mapstructure:"password" envconfig:"PASSWORD"`
+	Database        string        `mapstructure:"database" envconfig:"DATABASE"`
 	DialTimeout     time.Duration `mapstructure:"dial_timeout" envconfig:"DIAL_TIMEOUT"`
 	MaxOpenConn     int           `mapstructure:"max_open_conn" envconfig:"MAX_OPEN_CONN"`
 	MaxIdleConn     int           `mapstructure:"max_idle_conn" envconfig:"MAX_IDLE_CONN"`
@@ -52,12 +54,24 @@ func NewClickhouseConnection(ctx context.Context, cfg Clickhouse) (*Connection, 
 	}
 
 	host := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	opt := &clickhouse.Options{
-		Addr:        []string{host},
-		Auth:        clickhouse.Auth{Username: cfg.Username, Password: cfg.Password},
-		DialTimeout: cfg.DialTimeout,
-		Protocol:    clickhouse.Native,
-		Compression: &clickhouse.Compression{Method: clickhouse.CompressionLZ4},
+	var opt *clickhouse.Options
+	// temp hack
+	if cfg.Database != "" {
+		opt = &clickhouse.Options{
+			Addr:        []string{host},
+			Auth:        clickhouse.Auth{Username: cfg.Username, Password: cfg.Password, Database: cfg.Database},
+			DialTimeout: cfg.DialTimeout,
+			Protocol:    clickhouse.Native,
+			Compression: &clickhouse.Compression{Method: clickhouse.CompressionLZ4},
+		}
+	} else {
+		opt = &clickhouse.Options{
+			Addr:        []string{host},
+			Auth:        clickhouse.Auth{Username: cfg.Username, Password: cfg.Password},
+			DialTimeout: cfg.DialTimeout,
+			Protocol:    clickhouse.Native,
+			Compression: &clickhouse.Compression{Method: clickhouse.CompressionLZ4},
+		}
 	}
 
 	var (

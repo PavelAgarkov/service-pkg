@@ -7,6 +7,7 @@ import (
 
 	logger_wrapper "github.com/PavelAgarkov/service-pkg/logger"
 	logger "github.com/PavelAgarkov/service-pkg/logger/zap_engine"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

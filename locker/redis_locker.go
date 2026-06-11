@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	lockKeyPrefix = "github.com/PavelAgarkov/service-pkg-block-prefix-"
+	lockKeyPrefix = "gitlab.wildberries.ru/whs-ai/whs-ai/github.com/PavelAgarkov/service-pkg-block-prefix-"
 
 	// Скрипт для взятия блокировки
 	lockScript = `return redis.call("SET", KEYS[1], ARGV[1], "NX", "PX", ARGV[2]) and 1 or 0`
