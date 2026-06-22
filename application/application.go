@@ -14,6 +14,8 @@ import (
 	logger "github.com/PavelAgarkov/service-pkg/logger/zap_engine"
 	"github.com/PavelAgarkov/service-pkg/utils"
 	"github.com/PavelAgarkov/service-pkg/watchdog"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -258,4 +260,50 @@ func (app *App) FlushLogger() {
 
 func (app *App) Run() {
 	<-app.ctx.Done()
+}
+
+type AppConfig struct {
+	Cores        int
+	HeapOverflow int
+}
+
+func defaultInitLogger() error {
+	err := logger.InitLoggerForStdout(
+		zapcore.InfoLevel, false, nil,
+		zap.AddCallerSkip(2),
+		zap.AddStacktrace(zapcore.DPanicLevel),
+		zap.AddStacktrace(zapcore.PanicLevel),
+		zap.AddStacktrace(zapcore.FatalLevel),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to init logger: %w", err)
+	}
+	return nil
+}
+
+func RunExecution(config AppConfig, execution func(ctx context.Context, app *App) error, initLogger func() error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	app := NewApp(ctx, config.Cores, config.HeapOverflow)
+	app.Start(cancel)
+
+	isNil := initLogger == nil
+	if isNil {
+		defaultErr := defaultInitLogger()
+		if defaultErr != nil {
+			panic(fmt.Sprintf("failed to init default logger: %v", defaultErr))
+		}
+	} else {
+		if err := initLogger(); err != nil {
+			panic(fmt.Sprintf("failed to init custom logger: %v", err))
+		}
+	}
+
+	if err := execution(ctx, app); err != nil {
+		panic(fmt.Sprintf("failed to execute application logic: %v", err))
+	}
+	defer app.FlushLogger()
+	defer app.Stop()
+	defer app.RegisterRecovers()()
+
+	app.Run()
 }
