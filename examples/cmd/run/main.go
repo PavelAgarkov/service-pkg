@@ -1,0 +1,103 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"time"
+
+	apppkg "github.com/PavelAgarkov/service-pkg/application"
+	"github.com/PavelAgarkov/service-pkg/locker"
+	logtypes "github.com/PavelAgarkov/service-pkg/logger"
+	logger "github.com/PavelAgarkov/service-pkg/logger/zap_engine"
+	"github.com/PavelAgarkov/service-pkg/scheduler"
+	"github.com/PavelAgarkov/service-pkg/server"
+	"github.com/PavelAgarkov/service-pkg/watchdog"
+	"github.com/go-redis/redis/v8"
+)
+
+func main() {
+	apppkg.RunExecution(
+		apppkg.AppConfig{
+			Cores:        4,
+			HeapOverflow: 100,
+		},
+		func(ctx context.Context, app *apppkg.App) error {
+			storage := server.NewPreShutdownState(
+				true,
+				10*time.Second,
+				10*time.Second,
+			)
+			httpStop := server.CreateHTTPChiServer(
+				func(s *server.HTTPServerChi) {
+					s.Router.Use(server.RecoverChiMiddleware, server.LoggingChiMiddleware)
+
+					s.Router.Use(server.DrainMiddleware(storage, func(w http.ResponseWriter) {
+						func(w http.ResponseWriter, msg string, status int, code int) {
+							type RequestError struct {
+								Message string `json:"message"`
+								Code    int    `json:"code"`
+							}
+							w.Header().Set("Content-Type", "application/json")
+							w.WriteHeader(status)
+							_, internalErr := json.Marshal(&RequestError{
+								Message: msg,
+								Code:    code,
+							})
+
+							if internalErr != nil {
+								_, _ = json.Marshal(&RequestError{
+									Message: msg,
+									Code:    code,
+								})
+								logger.WriteErrorLog(nil, &logtypes.LogEntry{
+									Msg:       "failed to write json error response",
+									Error:     internalErr,
+									Component: "ProxyAPI",
+									Method:    "jsonError",
+								})
+							}
+						}(w, "server in draining state try again", http.StatusServiceUnavailable, 5555)
+					}))
+					s.Router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+						w.WriteHeader(200)
+					})
+				},
+				":8080",
+				storage,
+			)
+			app.RegisterShutdown("http", httpStop, apppkg.HighPriority)
+
+			// Планировщик с одной задачей
+			sch := scheduler.NewJobScheduler(1)
+			_ = sch.Add(scheduler.JobConfiguration{
+				Name:     "heartbeat",
+				Tick:     5 * time.Second,
+				Deadline: 2 * time.Second,
+				StopMode: scheduler.StopImmediate,
+				Func: func(ctx context.Context) error {
+					logger.WriteInfoLog(ctx, &logtypes.LogEntry{Msg: "tick"})
+					return nil
+				},
+			})
+			app.RegisterShutdown("scheduler", func() {
+				scheduler.NewTaskSupervisor([]scheduler.JobSchedulerInterface{sch}).Stop()
+			}, apppkg.MediumPriority)
+
+			// Лидер‑элекция (при необходимости)
+			rdb := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
+			lck := locker.NewLocker(rdb)
+			wd := watchdog.NewRedisWatchdogLeader(ctx, lck)
+
+			app.RegisterWatchdogsLeadership(&apppkg.LeaderSupervisor{
+				Watchdog:       wd,
+				Watcher:        wd.Elect(watchdog.Config{ElectionName: watchdog.Cron}),
+				SupervisorName: "cron-supervisor",
+				Start:          func() { sch.Start(ctx)() },
+				Stop:           func() { sch.Stop()() },
+			})
+			return nil
+		},
+		nil,
+	)
+}
