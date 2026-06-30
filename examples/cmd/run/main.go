@@ -18,7 +18,7 @@ import (
 func main() {
 	kernel.RunKernel(
 		kernel.WithConfigs(
-			kernel.AppConfig{
+			kernel.KernelConfig{
 				Cores:        4,
 				HeapOverflow: 100,
 				//KernelId:     "my-kernel-id", UUID will be generated if not provided
