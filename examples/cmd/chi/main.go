@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/PavelAgarkov/service-pkg/application"
+	"github.com/PavelAgarkov/service-pkg/kernel"
 	"github.com/PavelAgarkov/service-pkg/server"
 	"github.com/go-chi/chi/v5"
 )
@@ -18,11 +18,11 @@ func main() {
 }
 
 func RunMain(parent context.Context, cancel context.CancelFunc) {
-	app := application.NewApp(parent, 1, 100)
-	app.Start(cancel)
+	kl := kernel.NewDefaultKernel(parent, 1, 100)
+	kl.Start(cancel)
 
-	defer app.Stop()
-	defer app.RegisterRecovers()()
+	defer kl.Stop()
+	defer kl.RegisterRecovers()()
 
 	storage := server.NewPreShutdownState(
 		true,
@@ -68,7 +68,7 @@ func RunMain(parent context.Context, cancel context.CancelFunc) {
 		server.RecoverChiMiddleware,
 		server.LoggingChiMiddleware,
 	)
-	app.RegisterShutdown("chi_http_server", shutdown, application.ImmediatePriority)
+	kl.RegisterShutdown("chi_http_server", shutdown, kernel.ImmediatePriority)
 
-	app.Run()
+	kl.Run()
 }
