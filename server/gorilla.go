@@ -5,12 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"time"
 
-	"github.com/PavelAgarkov/service-pkg/logger"
-	logger "github.com/PavelAgarkov/service-pkg/logger/zap_engine"
 	"github.com/PavelAgarkov/service-pkg/utils"
 
 	"github.com/gorilla/mux"
@@ -43,21 +42,12 @@ func (simple *HTTPServer) RunHTTPServer(balancer http.Handler, mwf ...mux.Middle
 	ctx, cancel := context.WithCancel(context.Background())
 	utils.GoRecover(ctx, func(ctx context.Context) {
 		defer cancel()
-		logger.WriteInfoLog(ctx, &logger_wrapper.LogEntry{
-			Msg:       fmt.Sprintf("Server is running on %s", simple.port),
-			Component: "HTTPServer",
-			Method:    "RunHTTPServer",
-			Args:      simple.port,
-		})
+		log.Printf("HTTP server listening on %s", simple.port)
+
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			panic(fmt.Sprintf("Server stopped by error: %s", err))
 		}
-		logger.WriteInfoLog(ctx, &logger_wrapper.LogEntry{
-			Msg:       "Server has stopped",
-			Component: "HTTPServer",
-			Method:    "RunHTTPServer",
-			Args:      simple.port,
-		})
+		log.Printf("Server has stopped: %s", simple.port)
 	})
 
 	return simple.shutdown(server)
@@ -66,12 +56,7 @@ func (simple *HTTPServer) RunHTTPServer(balancer http.Handler, mwf ...mux.Middle
 // Shutdown gracefully shuts down the server without interrupting any active connections.
 func (simple *HTTPServer) shutdown(server *http.Server) func() {
 	return func() {
-		logger.WriteInfoLog(context.Background(), &logger_wrapper.LogEntry{
-			Msg:       "Shutting down the server...",
-			Component: "HTTPServer",
-			Method:    "shutdown",
-			Args:      simple.port,
-		})
+		log.Printf("Shutting down the server: %s", simple.port)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		// использовать server.Shutdown(ctx) вместо server.Close() для корректного завершения запросов
@@ -80,20 +65,9 @@ func (simple *HTTPServer) shutdown(server *http.Server) func() {
 		// после этого сервер будет остановлен
 		// если необходимо остановить сервер сразу, то использовать server.Close()
 		if err := server.Shutdown(ctx); err != nil {
-			logger.WriteErrorLog(context.Background(), &logger_wrapper.LogEntry{
-				Msg:       fmt.Sprintf("Server shutdown failed: %s", err),
-				Error:     err,
-				Component: "HTTPServer",
-				Method:    "shutdown",
-				Args:      simple.port,
-			})
+			log.Printf("Server shutdown failed: %s", err)
 		}
-		logger.WriteInfoLog(context.Background(), &logger_wrapper.LogEntry{
-			Msg:       fmt.Sprintf("Server has done: %s", simple.port),
-			Component: "HTTPServer",
-			Method:    "shutdown",
-			Args:      simple.port,
-		})
+		log.Printf("Server has done: %s", simple.port)
 	}
 }
 
@@ -138,15 +112,9 @@ func LoggerContextMiddleware() mux.MiddlewareFunc {
 
 func RecoverMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rr := r.WithContext(r.Context())
 		defer func() {
 			if r := recover(); r != nil {
-				logger.WriteErrorLog(rr.Context(), &logger_wrapper.LogEntry{
-					Msg:       "Паника произошла в http запросе приложении",
-					Error:     fmt.Errorf("%v", r),
-					Component: "HTTPServer",
-					Method:    "RecoverMiddleware",
-				})
+				log.Printf("Panic occurred in HTTP request: %v", r)
 				w.WriteHeader(http.StatusInternalServerError)
 			}
 		}()
@@ -176,13 +144,7 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 		lrw := newLoggingResponseWriter(w)
 
 		defer func(start time.Time) {
-			logger.WriteInfoLog(ctx, &logger_wrapper.LogEntry{
-				Msg:       fmt.Sprintf("%s request to %s completed", r.Method, r.RequestURI),
-				Component: "HTTPServer",
-				Method:    "LoggingMiddleware",
-				Args: fmt.Sprintf("method: %s, url: %s, user_agent: %s, status_code: %d, elapsed_ms: %s",
-					r.Method, r.RequestURI, r.UserAgent(), lrw.statusCode, time.Since(start)),
-			})
+			log.Printf("%s request to %s completed with status %d in %v", r.Method, r.RequestURI, lrw.statusCode, time.Since(start))
 		}(time.Now())
 		next.ServeHTTP(lrw, r)
 	})

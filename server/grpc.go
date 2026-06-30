@@ -3,12 +3,11 @@ package server
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"runtime/debug"
 	"time"
 
-	"github.com/PavelAgarkov/service-pkg/logger"
-	logger "github.com/PavelAgarkov/service-pkg/logger/zap_engine"
 	"github.com/PavelAgarkov/service-pkg/utils"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -43,22 +42,11 @@ func (s *GRPCServer) Start(ctx context.Context, registerServices func(*grpc.Serv
 
 	listener, err := net.Listen(s.configs.Network, s.configs.Port)
 	if err != nil {
-		logger.WriteFatalLog(ctx, &logger_wrapper.LogEntry{
-			Msg:       fmt.Sprintf("Failed to listen on port %s", s.configs.Port),
-			Error:     err,
-			Args:      s.configs,
-			Component: "GRPCServer",
-			Method:    "Start",
-		})
+		log.Printf("Failed to listen on port %s: %v", s.configs.Port, err)
 	}
 
 	utils.GoRecover(ctx, func(ctx context.Context) {
-		logger.WriteInfoLog(ctx, &logger_wrapper.LogEntry{
-			Msg:       fmt.Sprintf("gRPC server is started on %s", s.configs.Port),
-			Args:      s.configs,
-			Component: "GRPCServer",
-			Method:    "Start",
-		})
+		log.Printf("gRPC server is started on %s", s.configs.Port)
 		if err = s.server.Serve(listener); err != nil {
 			panic(fmt.Sprintf("Server gRPC stopped by error: %v", err))
 		}
@@ -69,11 +57,7 @@ func (s *GRPCServer) Start(ctx context.Context, registerServices func(*grpc.Serv
 
 func (s *GRPCServer) shutdown() {
 	logCtx := context.Background()
-	logger.WriteInfoLog(logCtx, &logger_wrapper.LogEntry{
-		Msg:       "Shutting down gRPC server",
-		Component: "GRPCServer",
-		Method:    "shutdown",
-	})
+	log.Printf("Shutting down gRPC server on %s", s.configs.Port)
 
 	timeoutCtx, cancel := context.WithTimeout(logCtx, 5*time.Second)
 	defer cancel()
@@ -87,17 +71,9 @@ func (s *GRPCServer) shutdown() {
 
 	select {
 	case <-done:
-		logger.WriteInfoLog(logCtx, &logger_wrapper.LogEntry{
-			Msg:       "gRPC server has gracefully stopped.",
-			Component: "GRPCServer",
-			Method:    "shutdown",
-		})
+		log.Printf("gRPC server has gracefully stopped.")
 	case <-timeoutCtx.Done():
-		logger.WriteWarnLog(logCtx, &logger_wrapper.LogEntry{
-			Msg:       "Graceful shutdown timed out, forcing stop.",
-			Component: "GRPCServer",
-			Method:    "shutdown",
-		})
+		log.Printf("Graceful shutdown timed out, forcing stop.")
 		s.server.Stop()
 	}
 }
@@ -113,13 +89,7 @@ func PanicHandler(ctx context.Context, p interface{}) error {
 	fullMethod := ts.Method()
 	stack := string(debug.Stack())
 
-	logger.WriteErrorLog(ctx, &logger_wrapper.LogEntry{
-		Msg:       "panic in gRPC handler",
-		Component: "GRPCServer",
-		Method:    fullMethod,
-		Error:     fmt.Errorf("%v", p),
-		Args:      stack,
-	})
+	log.Printf("panic in gRPC handler: %v\nMethod: %s\nStack trace:\n%s", p, fullMethod, stack)
 
 	return status.Errorf(codes.Internal, "internal server error (%s)", fullMethod)
 }

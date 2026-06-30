@@ -6,11 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"sync"
 	"time"
 
-	"github.com/PavelAgarkov/service-pkg/logger"
-	logger "github.com/PavelAgarkov/service-pkg/logger/zap_engine"
 	"github.com/PavelAgarkov/service-pkg/utils"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -115,12 +114,7 @@ func (c *Connection) Reconnect(ctx context.Context, cfg Clickhouse) error {
 
 	err = old.Close()
 	if err != nil {
-		logger.WriteErrorLog(ctx, &logger_wrapper.LogEntry{
-			Msg:       "Failed to close old Clickhouse connection",
-			Error:     err,
-			Component: "ClickhouseConnection",
-			Method:    "Reconnect",
-		})
+		log.Printf("Failed to close old Clickhouse connection: %v", err)
 		return fmt.Errorf("failed to close old Clickhouse connection: %w", err)
 	}
 	return nil
@@ -132,12 +126,7 @@ func (c *Connection) GetDB() *sql.DB {
 
 func (c *Connection) disconnectFromDB(ctx context.Context) error {
 	if err := c.conn.Close(); err != nil {
-		logger.WriteErrorLog(ctx, &logger_wrapper.LogEntry{
-			Msg:       "Failed to close Clickhouse connection",
-			Error:     err,
-			Component: "ClickhouseConnection",
-			Method:    "disconnectFromDB",
-		})
+		log.Printf("Failed to close Clickhouse connection: %v", err)
 		return err
 	}
 
@@ -147,12 +136,7 @@ func (c *Connection) disconnectFromDB(ctx context.Context) error {
 func (c *Connection) Shutdown(ctx context.Context) func() {
 	return func() {
 		if err := c.disconnectFromDB(ctx); err != nil {
-			logger.WriteErrorLog(ctx, &logger_wrapper.LogEntry{
-				Msg:       "Error during Clickhouse shutdown",
-				Error:     err,
-				Component: "ClickhouseConnection",
-				Method:    "Shutdown",
-			})
+			log.Printf("Error during Clickhouse shutdown: %v", err)
 		}
 	}
 }

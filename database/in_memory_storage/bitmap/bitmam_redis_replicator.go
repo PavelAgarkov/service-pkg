@@ -5,10 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
-
-	loggerwrapper "github.com/PavelAgarkov/service-pkg/logger"
-	logger "github.com/PavelAgarkov/service-pkg/logger/zap_engine"
 
 	"github.com/go-redis/redis/v8"
 )
@@ -83,12 +81,7 @@ func (r *BitmapRedisReplicator) readBytesFromDump(ctx context.Context, versionKe
 	}
 
 	if bitmapBytes == nil {
-		logger.WriteInfoLog(ctx, &loggerwrapper.LogEntry{
-			Msg:       fmt.Sprintf("[%s] bitmap is empty from dump", r.forStorage),
-			Component: "BitmapRedisReplicator",
-			Method:    "readBytesFromDump",
-			Args:      fmt.Sprintf("versionKey=%s", versionKey),
-		})
+		log.Printf("[%s] bitmap is empty from dump", r.forStorage)
 		return nil, nil
 	}
 
@@ -99,13 +92,7 @@ func (r *BitmapRedisReplicator) readBytesFromDump(ctx context.Context, versionKe
 func (r *BitmapRedisReplicator) writeBytesToDump(ctx context.Context, versionKey string, bytes []byte, ttl time.Duration) error {
 	err := r.redis.Set(ctx, versionKey, bytes, ttl).Err()
 	if err != nil {
-		logger.WriteErrorLog(ctx, &loggerwrapper.LogEntry{
-			Msg:       fmt.Sprintf("failed to write bitmap to dump in %s", r.forStorage),
-			Component: "BitmapRedisReplicator",
-			Method:    "writeBytesToDump",
-			Args:      fmt.Sprintf("versionKey=%s, ttl=%s", versionKey, ttl.String()),
-			Error:     err,
-		})
+		log.Printf("[%s] failed to write bitmap to dump: %v", r.forStorage, err)
 		return err
 	}
 	return nil

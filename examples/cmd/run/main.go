@@ -3,13 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
 	apppkg "github.com/PavelAgarkov/service-pkg/application"
 	"github.com/PavelAgarkov/service-pkg/locker"
-	logtypes "github.com/PavelAgarkov/service-pkg/logger"
-	logger "github.com/PavelAgarkov/service-pkg/logger/zap_engine"
 	"github.com/PavelAgarkov/service-pkg/scheduler"
 	"github.com/PavelAgarkov/service-pkg/server"
 	"github.com/PavelAgarkov/service-pkg/watchdog"
@@ -50,12 +49,7 @@ func main() {
 									Message: msg,
 									Code:    code,
 								})
-								logger.WriteErrorLog(nil, &logtypes.LogEntry{
-									Msg:       "failed to write json error response",
-									Error:     internalErr,
-									Component: "ProxyAPI",
-									Method:    "jsonError",
-								})
+								log.Printf("failed to write json error response: %v", internalErr)
 							}
 						}(w, "server in draining state try again", http.StatusServiceUnavailable, 5555)
 					}))
@@ -76,7 +70,7 @@ func main() {
 				Deadline: 2 * time.Second,
 				StopMode: scheduler.StopImmediate,
 				Func: func(ctx context.Context) error {
-					logger.WriteInfoLog(ctx, &logtypes.LogEntry{Msg: "tick"})
+					log.Printf("heartbeat tick")
 					return nil
 				},
 			})
@@ -98,6 +92,5 @@ func main() {
 			})
 			return nil
 		},
-		nil,
 	)
 }

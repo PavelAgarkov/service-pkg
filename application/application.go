@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"runtime"
@@ -10,12 +11,8 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/PavelAgarkov/service-pkg/logger"
-	logger "github.com/PavelAgarkov/service-pkg/logger/zap_engine"
 	"github.com/PavelAgarkov/service-pkg/utils"
 	"github.com/PavelAgarkov/service-pkg/watchdog"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -65,12 +62,7 @@ func NewApp(ctx context.Context, cores int, heapOverflow int) *App {
 	}
 	debug.SetGCPercent(heapOverflow)
 	runtime.GOMAXPROCS(cores)
-	logger.WriteInfoLog(ctx, &logger_wrapper.LogEntry{
-		Msg:       fmt.Sprintf("Application registred with runtime.GOMAXPROCS(%d) and debug.SetGCPercent(%d)", cores, heapOverflow),
-		Component: "application",
-		Method:    "NewApp",
-		Args:      fmt.Sprintf("cores: %d, heapOverflow: %d", cores, heapOverflow),
-	})
+	log.Printf("Application registred with runtime.GOMAXPROCS(%d) and debug.SetGCPercent(%d)\n", cores, heapOverflow)
 	return &App{
 		shutdown: &linkedList{},
 		ctx:      ctx,
@@ -80,11 +72,7 @@ func NewApp(ctx context.Context, cores int, heapOverflow int) *App {
 
 func (app *App) StartWatchdogsLeadership() {
 	if len(app.leaderSupervisors) == 0 {
-		logger.WriteInfoLog(context.Background(), &logger_wrapper.LogEntry{
-			Msg:       "No supervisors registered for leadership",
-			Component: "application",
-			Method:    "StartWatchdogsLeadership",
-		})
+		log.Println("No supervisors registered for leadership")
 		return
 	}
 
@@ -93,11 +81,7 @@ func (app *App) StartWatchdogsLeadership() {
 			for {
 				select {
 				case <-ctx.Done():
-					logger.WriteInfoLog(app.ctx, &logger_wrapper.LogEntry{
-						Msg:       fmt.Sprintf("Stopping supervisor %s due to context cancellation", supervisor.SupervisorName),
-						Component: "application",
-						Method:    "StartWatchdogsLeadership",
-					})
+					log.Printf("Stopping supervisor %s due to context cancellation\n", supervisor.SupervisorName)
 					return
 				case <-supervisor.ctx.Done():
 					supervisor.mu.Lock()
@@ -106,11 +90,7 @@ func (app *App) StartWatchdogsLeadership() {
 					return
 				case res, ok := <-supervisor.Watcher:
 					if !ok {
-						logger.WriteInfoLog(app.ctx, &logger_wrapper.LogEntry{
-							Msg:       fmt.Sprintf("Supervisor %s receive channel closed", supervisor.SupervisorName),
-							Component: "application",
-							Method:    "StartWatchdogsLeadership",
-						})
+						log.Printf("Supervisor %s receive channel closed\n", supervisor.SupervisorName)
 						return
 					}
 					if res == watchdog.LostAcquire {
@@ -118,11 +98,7 @@ func (app *App) StartWatchdogsLeadership() {
 						if supervisor.Working {
 							supervisor.Stop()
 							supervisor.Working = false
-							logger.WriteInfoLog(app.ctx, &logger_wrapper.LogEntry{
-								Msg:       fmt.Sprintf("Supervisor %s has stopped due to lost leadership", supervisor.SupervisorName),
-								Component: "application",
-								Method:    "StartWatchdogsLeadership",
-							})
+							log.Printf("Supervisor %s has stopped due to lost leadership\n", supervisor.SupervisorName)
 						}
 						supervisor.mu.Unlock()
 					}
@@ -131,11 +107,7 @@ func (app *App) StartWatchdogsLeadership() {
 						if !supervisor.Working {
 							supervisor.Start()
 							supervisor.Working = true
-							logger.WriteInfoLog(app.ctx, &logger_wrapper.LogEntry{
-								Msg:       fmt.Sprintf("Supervisor %s has started successfully", supervisor.SupervisorName),
-								Component: "application",
-								Method:    "StartWatchdogsLeadership",
-							})
+							log.Printf("Supervisor %s has started successfully\n", supervisor.SupervisorName)
 						}
 						supervisor.mu.Unlock()
 					}
@@ -147,12 +119,7 @@ func (app *App) StartWatchdogsLeadership() {
 
 func (app *App) RegisterWatchdogsLeadership(supervisor *LeaderSupervisor) {
 	if supervisor == nil {
-		logger.WriteErrorLog(app.ctx, &logger_wrapper.LogEntry{
-			Msg:       "Failed to register nil supervisor",
-			Component: "application",
-			Method:    "RegisterWatchdogsLeadership",
-			Error:     fmt.Errorf("supervisor cannot be nil"),
-		})
+		log.Println("Failed to register nil supervisor")
 		return
 	}
 
@@ -162,11 +129,7 @@ func (app *App) RegisterWatchdogsLeadership(supervisor *LeaderSupervisor) {
 
 func (app *App) RegisterShutdown(name string, fn func(), priority int) {
 	defer func() {
-		logger.WriteInfoLog(app.ctx, &logger_wrapper.LogEntry{
-			Msg:       fmt.Sprintf("Registered shutdown func %s with priority %d", name, priority),
-			Component: "application",
-			Method:    "RegisterShutdown",
-		})
+		log.Printf("Registered shutdown func %s with priority %d\n", name, priority)
 	}()
 	app.shutdownRWM.Lock()
 	defer app.shutdownRWM.Unlock()
@@ -193,11 +156,7 @@ func (app *App) shutdownAllAndDeleteAllCanceled() {
 	defer app.shutdownRWM.Unlock()
 	for app.shutdown.node != nil {
 		app.shutdown.node.shutdownFunc()
-		logger.WriteInfoLog(app.ctx, &logger_wrapper.LogEntry{
-			Msg:       fmt.Sprintf("Shutdown func %s executed with priority %d", app.shutdown.node.name, app.shutdown.node.priority),
-			Component: "application",
-			Method:    "shutdownAllAndDeleteAllCanceled",
-		})
+		log.Printf("Shutdown func %s executed with priority %d\n", app.shutdown.node.name, app.shutdown.node.priority)
 		app.shutdown.node = app.shutdown.node.next
 	}
 }
@@ -211,17 +170,9 @@ func (app *App) Stop() {
 			supervisor.Working = false
 		}
 		supervisor.mu.Unlock()
-		logger.WriteInfoLog(app.ctx, &logger_wrapper.LogEntry{
-			Msg:       fmt.Sprintf("Supervisor %s has been stopped", supervisor.SupervisorName),
-			Component: "application",
-			Method:    "Stop",
-		})
+		log.Printf("Supervisor %s has been stopped\n", supervisor.SupervisorName)
 	}
-	logger.WriteInfoLog(app.ctx, &logger_wrapper.LogEntry{
-		Msg:       "Stopping application",
-		Component: "application",
-		Method:    "Stop",
-	})
+	log.Printf("Application is stopping...\n")
 	app.shutdownAllAndDeleteAllCanceled()
 }
 
@@ -231,11 +182,7 @@ func (app *App) Start(cancel context.CancelFunc) {
 	utils.GoRecover(app.ctx, func(ctx context.Context) {
 		defer signal.Stop(app.sig)
 		<-app.sig
-		logger.WriteInfoLog(app.ctx, &logger_wrapper.LogEntry{
-			Msg:       "Signal received. Shutting down application...",
-			Component: "application",
-			Method:    "Start",
-		})
+		log.Printf("Signal received. Shutting down application...\n")
 		cancel()
 	})
 }
@@ -243,19 +190,10 @@ func (app *App) Start(cancel context.CancelFunc) {
 func (app *App) RegisterRecovers() func() {
 	return func() {
 		if r := recover(); r != nil {
-			logger.WriteErrorLog(app.ctx, &logger_wrapper.LogEntry{
-				Msg:       "Panic happened in application",
-				Component: "application",
-				Method:    "RegisterRecovers",
-				Error:     fmt.Errorf("%v", r),
-			})
+			log.Printf("Panic happened in application: %v\n", r)
 			app.sig <- syscall.SIGTERM
 		}
 	}
-}
-
-func (app *App) FlushLogger() {
-	logger.FlushLogs()
 }
 
 func (app *App) Run() {
@@ -267,41 +205,14 @@ type AppConfig struct {
 	HeapOverflow int
 }
 
-func defaultInitLogger() error {
-	err := logger.InitLoggerForStdout(
-		zapcore.InfoLevel, false, nil,
-		zap.AddCallerSkip(2),
-		zap.AddStacktrace(zapcore.DPanicLevel),
-		zap.AddStacktrace(zapcore.PanicLevel),
-		zap.AddStacktrace(zapcore.FatalLevel),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to init logger: %w", err)
-	}
-	return nil
-}
-
-func RunExecution(config AppConfig, execution func(ctx context.Context, app *App) error, initLogger func() error) {
+func RunExecution(config AppConfig, execution func(ctx context.Context, app *App) error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	app := NewApp(ctx, config.Cores, config.HeapOverflow)
 	app.Start(cancel)
 
-	isNil := initLogger == nil
-	if isNil {
-		defaultErr := defaultInitLogger()
-		if defaultErr != nil {
-			panic(fmt.Sprintf("failed to init default logger: %v", defaultErr))
-		}
-	} else {
-		if err := initLogger(); err != nil {
-			panic(fmt.Sprintf("failed to init custom logger: %v", err))
-		}
-	}
-
 	if err := execution(ctx, app); err != nil {
 		panic(fmt.Sprintf("failed to execute application logic: %v", err))
 	}
-	defer app.FlushLogger()
 	defer app.Stop()
 	defer app.RegisterRecovers()()
 

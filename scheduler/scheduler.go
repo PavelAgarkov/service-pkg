@@ -4,11 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
-	"github.com/PavelAgarkov/service-pkg/logger"
-	logger "github.com/PavelAgarkov/service-pkg/logger/zap_engine"
 	"github.com/PavelAgarkov/service-pkg/utils"
 )
 
@@ -83,11 +82,7 @@ func (s *JobScheduler) Start(ctx context.Context) func() {
 		s.mu.Lock()
 		if s.started {
 			s.mu.Unlock()
-			logger.WriteWarnLog(ctx, &logger_wrapper.LogEntry{
-				Msg:       "scheduler.start",
-				Component: "scheduler",
-				Method:    "Start",
-			})
+			log.Printf("scheduler.Start: already started")
 			return
 		}
 		s.started = true
@@ -158,23 +153,12 @@ func (s *JobScheduler) run(name string, j *job) {
 
 		select {
 		case <-ctx.Done():
-			logger.WriteInfoLog(j.ctx, &logger_wrapper.LogEntry{
-				Msg:       "Job stopped",
-				Component: "scheduler",
-				Method:    "run",
-				Args:      name,
-			})
+			log.Printf("Job %s stopped: %v", name, ctx.Err())
 			return
 
 		case <-ticker.C:
 			if err := s.exec(j); err != nil && !errors.Is(err, context.Canceled) {
-				logger.WriteErrorLog(j.ctx, &logger_wrapper.LogEntry{
-					Msg:       "Job execution failed",
-					Component: "scheduler",
-					Method:    "run",
-					Args:      name,
-					Error:     err,
-				})
+				log.Printf("Job %s execution failed: %v", name, err)
 			}
 		}
 	}
@@ -189,13 +173,7 @@ func (s *JobScheduler) exec(j *job) (err error) {
 	defer func() { <-s.rate }()
 	defer func() {
 		if r := recover(); r != nil {
-			logger.WriteErrorLog(j.ctx, &logger_wrapper.LogEntry{
-				Msg:       "Job panic",
-				Component: "scheduler",
-				Method:    "exec",
-				Args:      j.name,
-				Error:     fmt.Errorf("panic in job %s: %v", j.name, r),
-			})
+			log.Printf("Job %s panicked: %v", j.name, r)
 			err = fmt.Errorf("panic in job: %v", r)
 		}
 	}()

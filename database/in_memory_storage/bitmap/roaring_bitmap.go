@@ -4,11 +4,10 @@ import (
 	bytes2 "bytes"
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
-	loggerwrapper "github.com/PavelAgarkov/service-pkg/logger"
-	logger "github.com/PavelAgarkov/service-pkg/logger/zap_engine"
 	"github.com/PavelAgarkov/service-pkg/utils"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
@@ -69,11 +68,7 @@ func (s *roaringBitmapStorage) Contains(key uint64) bool {
 	defer s.mu.RUnlock()
 	hit := s.bitmap.Contains(key)
 	if hit && s.withDebugLogs() {
-		logger.WriteDebugLog(context.Background(), &loggerwrapper.LogEntry{
-			Msg:       fmt.Sprintf("[%s] contains key %d: %t", s.configs.StorageName, key, hit),
-			Component: "roaringBitmapStorage",
-			Method:    "Contains",
-		})
+		log.Printf("[%s] contains key %d: %t", s.configs.StorageName, key, hit)
 	}
 	return hit
 }
@@ -83,11 +78,7 @@ func (s *roaringBitmapStorage) UpsertMany(keys []uint64) {
 	defer s.mu.Unlock()
 	s.bitmap.AddMany(keys)
 	if s.withDebugLogs() {
-		logger.WriteDebugLog(context.Background(), &loggerwrapper.LogEntry{
-			Msg:       fmt.Sprintf("[%s] upserted %d keys", s.configs.StorageName, len(keys)),
-			Component: "roaringBitmapStorage",
-			Method:    "UpsertMany",
-		})
+		log.Printf("[%s] upserted %d keys", s.configs.StorageName, len(keys))
 	}
 }
 
@@ -98,11 +89,7 @@ func (s *roaringBitmapStorage) RemoveMany(keys []uint64) {
 		s.bitmap.Remove(k)
 	}
 	if s.withDebugLogs() {
-		logger.WriteDebugLog(context.Background(), &loggerwrapper.LogEntry{
-			Msg:       fmt.Sprintf("[%s] removed %d keys", s.configs.StorageName, len(keys)),
-			Component: "roaringBitmapStorage",
-			Method:    "RemoveMany",
-		})
+		log.Printf("[%s] removed %d keys", s.configs.StorageName, len(keys))
 	}
 }
 
@@ -117,11 +104,7 @@ func (s *roaringBitmapStorage) Clear() {
 	defer s.mu.Unlock()
 	s.bitmap.Clear()
 	if s.withDebugLogs() {
-		logger.WriteDebugLog(context.Background(), &loggerwrapper.LogEntry{
-			Msg:       fmt.Sprintf("[%s] cleared roaring64 bitmap storage", s.configs.StorageName),
-			Component: "roaringBitmapStorage",
-			Method:    "Clear",
-		})
+		log.Printf("[%s] cleared roaring64 bitmap storage", s.configs.StorageName)
 	}
 }
 
@@ -136,47 +119,27 @@ func (s *roaringBitmapStorage) Warm(ctx context.Context) error {
 
 	if isEmpty {
 		if s.withDebugLogs() {
-			logger.WriteDebugLog(ctx, &loggerwrapper.LogEntry{
-				Msg:       fmt.Sprintf("[%s] storage is empty, starting warmer function", s.configs.StorageName),
-				Component: "roaringBitmapStorage",
-				Method:    "Warm",
-			})
+			log.Printf("[%s] storage is empty, starting warmer function", s.configs.StorageName)
 		}
 		data, err := s.warmer.WarmCallback(ctx, s.warmer.BatchSize, s)
 		if err != nil {
 			return err
 		}
 		if s.withDebugLogs() {
-			logger.WriteDebugLog(ctx, &loggerwrapper.LogEntry{
-				Msg:       fmt.Sprintf("[%s] warmer function returned %d items", s.configs.StorageName, len(data)),
-				Component: "roaringBitmapStorage",
-				Method:    "Warm",
-			})
+			log.Printf("[%s] warmer function returned %d items", s.configs.StorageName, len(data))
 		}
 
 		if s.withDebugLogs() {
-			logger.WriteDebugLog(ctx, &loggerwrapper.LogEntry{
-				Msg:       fmt.Sprintf("[%s] upserting data to roaring64 bitmap storage", s.configs.StorageName),
-				Component: "roaringBitmapStorage",
-				Method:    "Warm",
-			})
+			log.Printf("[%s] upserting data to roaring64 bitmap storage", s.configs.StorageName)
 		}
 
 		if len(data) == 0 {
-			logger.WriteDebugLog(ctx, &loggerwrapper.LogEntry{
-				Msg:       fmt.Sprintf("[%s] warmer function returned no data, skipping upsert", s.configs.StorageName),
-				Component: "roaringBitmapStorage",
-				Method:    "Warm",
-			})
+			log.Printf("[%s] warmer function returned no data, skipping upsert", s.configs.StorageName)
 			return nil
 		}
 		s.UpsertMany(data)
 		if s.withDebugLogs() {
-			logger.WriteDebugLog(ctx, &loggerwrapper.LogEntry{
-				Msg:       fmt.Sprintf("[%s] storage warmed up successfully", s.configs.StorageName),
-				Component: "roaringBitmapStorage",
-				Method:    "Warm",
-			})
+			log.Printf("[%s] storage warmed up successfully", s.configs.StorageName)
 		}
 	}
 	return nil
@@ -188,22 +151,11 @@ func (s *roaringBitmapStorage) ReadFromBuffer(ctx context.Context, buffer *bytes
 	defer s.mu.Unlock()
 	p, err := s.bitmap.ReadFrom(buffer)
 	if err != nil {
-		logger.WriteErrorLog(ctx, &loggerwrapper.LogEntry{
-			Msg:       fmt.Sprintf("[%s] failed to read from buffer", s.configs.StorageName),
-			Component: "roaringBitmapStorage",
-			Method:    "ReadFromBuffer",
-			Args:      fmt.Sprintf("versionKey=%s", s.configs.ReplicationKey),
-			Error:     err,
-		})
+		log.Printf("[%s] failed to read from buffer: %v", s.configs.StorageName, err)
 		return 0, err
 	}
 	if s.withDebugLogs() {
-		logger.WriteDebugLog(ctx, &loggerwrapper.LogEntry{
-			Msg:       fmt.Sprintf("[%s] read from buffer successfully: %d bytes", s.configs.StorageName, p),
-			Component: "roaringBitmapStorage",
-			Method:    "ReadFromBuffer",
-			Args:      fmt.Sprintf("versionKey=%s", s.configs.ReplicationKey),
-		})
+		log.Printf("[%s] read from buffer successfully: %d bytes", s.configs.StorageName, p)
 	}
 	return p, nil
 }
@@ -222,12 +174,7 @@ func (s *roaringBitmapStorage) GetBytesFromBitmap() ([]byte, error) {
 		return nil, err
 	}
 	if s.withDebugLogs() {
-		logger.WriteDebugLog(context.Background(), &loggerwrapper.LogEntry{
-			Msg:       fmt.Sprintf("[%s] bitmap converted to bytes successfully: %d bytes", s.configs.StorageName, len(bitmapBytes)),
-			Component: "roaringBitmapStorage",
-			Method:    "GetBytesFromBitmap",
-			Args:      fmt.Sprintf("versionKey=%s", s.configs.ReplicationKey),
-		})
+		log.Printf("[%s] bitmap converted to bytes successfully: %d bytes", s.configs.StorageName, len(bitmapBytes))
 	}
 
 	return bitmapBytes, nil
@@ -237,22 +184,11 @@ func (s *roaringBitmapStorage) GetBytesFromBitmap() ([]byte, error) {
 func (s *roaringBitmapStorage) Recover(ctx context.Context) error {
 	err := s.replicator.Recover(ctx, s, s.configs.ReplicationKey)
 	if err != nil {
-		logger.WriteErrorLog(ctx, &loggerwrapper.LogEntry{
-			Msg:       fmt.Sprintf("[%s] failed to recover bitmap from bytes", s.configs.StorageName),
-			Component: "roaringBitmapStorage",
-			Method:    "Recover",
-			Args:      fmt.Sprintf("versionKey=%s", s.configs.ReplicationKey),
-			Error:     err,
-		})
+		log.Printf("[%s] failed to recover bitmap from bytes: %v", s.configs.StorageName, err)
 		return err
 	}
 	if s.withDebugLogs() {
-		logger.WriteDebugLog(ctx, &loggerwrapper.LogEntry{
-			Msg:       fmt.Sprintf("[%s] bitmap recovered successfully: %s", s.configs.StorageName, s.printSize()),
-			Component: "roaringBitmapStorage",
-			Method:    "Recover",
-			Args:      fmt.Sprintf("versionKey=%s", s.configs.ReplicationKey),
-		})
+		log.Printf("[%s] bitmap recovered successfully", s.configs.StorageName)
 	}
 	return err
 }
@@ -260,22 +196,11 @@ func (s *roaringBitmapStorage) Recover(ctx context.Context) error {
 func (s *roaringBitmapStorage) Replicate(ctx context.Context) error {
 	err := s.replicator.Replicate(ctx, s, s.configs.ReplicationKey, s.configs.ReplicationTtl)
 	if err != nil {
-		logger.WriteErrorLog(ctx, &loggerwrapper.LogEntry{
-			Msg:       fmt.Sprintf("[%s] failed to replicate bitmap to bytes", s.configs.StorageName),
-			Component: "roaringBitmapStorage",
-			Method:    "Replicate",
-			Args:      fmt.Sprintf("versionKey=%s", s.configs.ReplicationKey),
-			Error:     err,
-		})
+		log.Printf("[%s] failed to replicate bitmap to bytes: %v", s.configs.StorageName, err)
 	}
 	if s.withDebugLogs() {
 		if err == nil {
-			logger.WriteDebugLog(ctx, &loggerwrapper.LogEntry{
-				Msg:       fmt.Sprintf("[%s] bitmap replicated successfully", s.configs.StorageName),
-				Component: "roaringBitmapStorage",
-				Method:    "Replicate",
-				Args:      fmt.Sprintf("versionKey=%s", s.configs.ReplicationKey),
-			})
+			log.Printf("[%s] bitmap replicated successfully", s.configs.StorageName)
 		}
 	}
 	return err
@@ -284,13 +209,7 @@ func (s *roaringBitmapStorage) Replicate(ctx context.Context) error {
 func (s *roaringBitmapStorage) DropReplicationKey(ctx context.Context) error {
 	err := s.replicator.DropReplicationKey(ctx, s.configs.ReplicationKey)
 	if err != nil {
-		logger.WriteErrorLog(ctx, &loggerwrapper.LogEntry{
-			Msg:       fmt.Sprintf("[%s] failed to drop replication key", s.configs.StorageName),
-			Component: "roaringBitmapStorage",
-			Method:    "DropReplicationKey",
-			Args:      fmt.Sprintf("versionKey=%s", s.configs.ReplicationKey),
-			Error:     err,
-		})
+		log.Printf("[%s] failed to drop replication key: %v", s.configs.StorageName, err)
 		return err
 	}
 
@@ -312,32 +231,17 @@ func (s *roaringBitmapStorage) background(ctx context.Context, configs BitmapSto
 				select {
 				case <-localCtx.Done():
 					if s.withDebugLogs() {
-						logger.WriteDebugLog(localCtx, &loggerwrapper.LogEntry{
-							Msg:       fmt.Sprintf("[%s] background goroutine stopped due to context cancellation", s.configs.StorageName),
-							Component: "roaringBitmapStorage",
-							Method:    "background",
-						})
+						log.Printf("[%s] background goroutine stopped due to context cancellation", s.configs.StorageName)
 					}
 					return
 				case <-monitoringTicker.C:
-					logger.WriteInfoLog(localCtx, &loggerwrapper.LogEntry{
-						Msg:       s.printSize(),
-						Component: "roaringBitmapStorage",
-						Method:    "background",
-						Args:      fmt.Sprintf("versionKey=%s", s.configs.ReplicationKey),
-					})
+					log.Printf("[%s] background monitoring: %s", s.configs.StorageName, s.printSize())
 				case <-optimizingTicker.C:
 					s.optimize(localCtx)
 				case <-replicationTicker.C:
 					err := s.Replicate(localCtx)
 					if err != nil {
-						logger.WriteErrorLog(localCtx, &loggerwrapper.LogEntry{
-							Msg:       fmt.Sprintf("[%s] failed to replicate bitmap", s.configs.StorageName),
-							Component: "roaringBitmapStorage",
-							Method:    "background",
-							Args:      fmt.Sprintf("versionKey=%s", s.configs.ReplicationKey),
-							Error:     err,
-						})
+						log.Printf("[%s] failed to replicate bitmap: %v", s.configs.StorageName, err)
 					}
 				}
 			}
@@ -349,11 +253,7 @@ func (s *roaringBitmapStorage) optimize(ctx context.Context) {
 	defer s.mu.Unlock()
 	s.bitmap.RunOptimize()
 	if s.withDebugLogs() {
-		logger.WriteDebugLog(ctx, &loggerwrapper.LogEntry{
-			Msg:       fmt.Sprintf("[%s] optimized roaring64 bitmap storage", s.configs.StorageName),
-			Component: "roaringBitmapStorage",
-			Method:    "optimize",
-		})
+		log.Printf("[%s] optimized roaring64 bitmap storage", s.configs.StorageName)
 	}
 }
 

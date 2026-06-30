@@ -2,16 +2,12 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/PavelAgarkov/service-pkg/application"
-	logger "github.com/PavelAgarkov/service-pkg/logger/zap_engine"
 	"github.com/PavelAgarkov/service-pkg/server"
 	"github.com/go-chi/chi/v5"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 func main() {
@@ -21,24 +17,9 @@ func main() {
 	RunMain(parent, cancel)
 }
 
-func InitLogger() {
-	if err := logger.InitLoggerForStdout(
-		zapcore.InfoLevel, false, nil,
-		zap.AddCallerSkip(2),
-		zap.AddStacktrace(zapcore.DPanicLevel),
-		zap.AddStacktrace(zapcore.PanicLevel),
-		zap.AddStacktrace(zapcore.FatalLevel),
-	); err != nil {
-		panic(fmt.Sprintf("failed to init logger: %v", err))
-	}
-}
-
 func RunMain(parent context.Context, cancel context.CancelFunc) {
-	InitLogger()
 	app := application.NewApp(parent, 1, 100)
 	app.Start(cancel)
-
-	defer app.FlushLogger()
 
 	defer app.Stop()
 	defer app.RegisterRecovers()()

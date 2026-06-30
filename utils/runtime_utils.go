@@ -4,32 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
-
-	"github.com/PavelAgarkov/service-pkg/logger"
-	logger "github.com/PavelAgarkov/service-pkg/logger/zap_engine"
 )
 
 func GoRecover(ctx context.Context, fn func(ctx context.Context)) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				logger.WriteErrorLog(ctx, &logger_wrapper.LogEntry{
-					Msg:       "recovered from panic in goroutine",
-					Error:     panicToError(r),
-					Component: "utils",
-					Method:    "GoRecover",
-				})
+				log.Printf("recovered from panic in goroutine: %v", r)
 			}
 		}()
 
 		select {
 		case <-ctx.Done():
-			logger.WriteInfoLog(ctx, &logger_wrapper.LogEntry{
-				Msg:       "goroutine cancelled before start",
-				Component: "utils",
-				Method:    "GoRecover",
-			})
+			log.Printf("goroutine cancelled before start: %v", ctx.Err())
 			return
 		default:
 		}
@@ -51,12 +40,7 @@ func panicToError(value any) error {
 
 func Recover(ctx context.Context) {
 	if r := recover(); r != nil {
-		logger.WriteErrorLog(ctx, &logger_wrapper.LogEntry{
-			Msg:       "recovered from panic in goroutine",
-			Error:     r.(error),
-			Component: "utils",
-			Method:    "Recover",
-		})
+		log.Printf("recovered from panic in goroutine: %v", r)
 	}
 }
 

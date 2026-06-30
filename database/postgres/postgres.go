@@ -3,10 +3,8 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
-
-	logger_wrapper "github.com/PavelAgarkov/service-pkg/logger"
-	logger "github.com/PavelAgarkov/service-pkg/logger/zap_engine"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -42,22 +40,10 @@ func NewPostgresConnection(ctx context.Context, config Configs) *Connection {
 
 	poolConfig, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		logger.WriteFatalLog(ctx, &logger_wrapper.LogEntry{
-			Msg:       "Failed to parse pgxpool config",
-			Error:     err,
-			Component: "PostgresConnection",
-			Method:    "NewPostgresConnection",
-			Args:      config.Host + ":" + config.Port + "/" + config.Database,
-		})
+		log.Printf("Failed to parse pgxpool config: %v", err)
 	}
 	if poolConfig == nil {
-		logger.WriteFatalLog(ctx, &logger_wrapper.LogEntry{
-			Msg:       "pgxpool config is nil",
-			Error:     fmt.Errorf("pgxpool config is nil"),
-			Component: "PostgresConnection",
-			Method:    "NewPostgresConnection",
-			Args:      config.Host + ":" + config.Port + "/" + config.Database,
-		})
+		log.Printf("pgxpool config is nil")
 		return nil
 	}
 
@@ -104,13 +90,7 @@ func NewPostgresConnection(ctx context.Context, config Configs) *Connection {
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
-		logger.WriteFatalLog(ctx, &logger_wrapper.LogEntry{
-			Msg:       "Failed to connect to Postgres (pgxpool)",
-			Error:     err,
-			Component: "PostgresConnection",
-			Method:    "NewPostgresConnection",
-			Args:      config.Host + ":" + config.Port + "/" + config.Database,
-		})
+		log.Printf("Failed to connect to Postgres (pgxpool): %v", err)
 	}
 
 	return &Connection{pool: pool}

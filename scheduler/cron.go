@@ -3,9 +3,7 @@ package scheduler
 import (
 	"context"
 	"fmt"
-
-	"github.com/PavelAgarkov/service-pkg/logger"
-	logger "github.com/PavelAgarkov/service-pkg/logger/zap_engine"
+	"log"
 
 	"github.com/robfig/cron/v3"
 )
@@ -24,13 +22,7 @@ func NewCron() *Cron {
 func (c *Cron) Add(ctx context.Context, calendar string, fn func(ctx context.Context) error) {
 	_, err := c.c.AddFunc(calendar, func() {
 		if err := fn(ctx); err != nil {
-			logger.WriteErrorLog(ctx, &logger_wrapper.LogEntry{
-				Msg:       "cron job failed",
-				Component: "cron",
-				Method:    "Add",
-				Args:      calendar,
-				Error:     err,
-			})
+			log.Printf("cron job failed: %v", err)
 		}
 	})
 	if err != nil {
