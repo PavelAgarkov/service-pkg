@@ -14,6 +14,7 @@ import (
 	"github.com/PavelAgarkov/service-pkg/utils"
 	"github.com/PavelAgarkov/service-pkg/watchdog"
 	"github.com/google/uuid"
+	"go.uber.org/automaxprocs/maxprocs"
 )
 
 const (
@@ -88,9 +89,28 @@ func newKernel(ctx context.Context) *Kernel {
 
 func (kernel *Kernel) setUp() {
 	debug.SetGCPercent(kernel.config.HeapOverflow)
-	runtime.GOMAXPROCS(kernel.config.Cores)
 
-	log.Printf("kernel id - %s - registred with runtime.GOMAXPROCS(%d) and debug.SetGCPercent(%d)\n", kernel.ID(), kernel.config.Cores, kernel.config.HeapOverflow)
+	if kernel.config.Cores > 0 {
+		runtime.GOMAXPROCS(kernel.config.Cores)
+	} else {
+		_, err := maxprocs.Set(
+			maxprocs.Logger(func(format string, args ...interface{}) {
+				log.Printf(format, args...)
+			}),
+		)
+		if err != nil {
+			log.Printf("failed to configure GOMAXPROCS automatically: %v kernelID %s", err, kernel.ID())
+		}
+	}
+
+	actualGOMAXPROCS := runtime.GOMAXPROCS(0)
+
+	log.Printf(
+		"kernel id %s registered with runtime.GOMAXPROCS(%d) and debug.SetGCPercent(%d)",
+		kernel.ID(),
+		actualGOMAXPROCS,
+		kernel.config.HeapOverflow,
+	)
 }
 
 func (kernel *Kernel) StartWatchdogsLeadership() {
@@ -265,9 +285,6 @@ func RunKernel(options ...Option) {
 			return nil
 		}
 	}
-	if kernel.config.Cores == 0 {
-		kernel.config.Cores = 1
-	}
 	if kernel.config.HeapOverflow == 0 {
 		kernel.config.HeapOverflow = 100
 	}
@@ -278,11 +295,12 @@ func RunKernel(options ...Option) {
 	kernel.setUp()
 	kernel.Start(cancel)
 
+	defer kernel.Stop()
+	defer kernel.RegisterRecovers()()
+
 	if err := kernel.execution(ctx, kernel); err != nil {
 		panic(fmt.Sprintf("failed to execute kernel logic: %v kernelID %s \n", err, kernel.ID()))
 	}
-	defer kernel.Stop()
-	defer kernel.RegisterRecovers()()
 
 	kernel.Run()
 }

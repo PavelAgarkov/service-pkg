@@ -19,7 +19,7 @@ func main() {
 	kernel.RunKernel(
 		kernel.WithConfigs(
 			kernel.KernelConfig{
-				Cores:        4,
+				//Cores:        4, all cores of vm will be used if not provided
 				HeapOverflow: 100,
 				//KernelId:     "my-kernel-id", UUID will be generated if not provided
 			}),
