@@ -96,28 +96,12 @@ func NewGRPCGatewayServer(
 		configs.MaxHeaderBytes = 1 << 20
 	}
 
-	if configs.Swagger.Enabled {
-		if configs.Swagger.UIPath == "" {
-			configs.Swagger.UIPath = "/swagger/"
-		}
-
-		if configs.Swagger.JSONPath == "" {
-			configs.Swagger.JSONPath = "/swagger/api.swagger.json"
-		}
-
-		if configs.Swagger.JSONFile == "" {
-			return nil, errors.New(
-				"swagger JSON file is required when Swagger is enabled",
-			)
-		}
-	}
-
 	return &GRPCGatewayServer{
 		configs: configs,
 	}, nil
 }
 
-func buildGatewayHTTPHandler(
+func (s *GRPCGatewayServer) buildGatewayHTTPHandler(
 	gatewayMux *runtime.ServeMux,
 	config SwaggerConfig,
 ) (http.Handler, error) {
@@ -127,17 +111,19 @@ func buildGatewayHTTPHandler(
 
 	rootMux := http.NewServeMux()
 
-	rootMux.Handle(
-		config.JSONPath,
-		swaggerJSONHandler(config.JSONFile),
-	)
+	if s.configs.Swagger.Enabled {
+		rootMux.Handle(
+			config.JSONPath,
+			s.swaggerJSONHandler(config.JSONFile),
+		)
 
-	rootMux.Handle(
-		config.UIPath,
-		httpSwagger.Handler(
-			httpSwagger.URL(config.JSONPath),
-		),
-	)
+		rootMux.Handle(
+			config.UIPath,
+			httpSwagger.Handler(
+				httpSwagger.URL(config.JSONPath),
+			),
+		)
+	}
 
 	// grpc-gateway должен регистрироваться последним
 	// как fallback для остальных HTTP-путей.
@@ -146,7 +132,7 @@ func buildGatewayHTTPHandler(
 	return rootMux, nil
 }
 
-func swaggerJSONHandler(filename string) http.Handler {
+func (s *GRPCGatewayServer) swaggerJSONHandler(filename string) http.Handler {
 	return http.HandlerFunc(func(
 		writer http.ResponseWriter,
 		request *http.Request,
@@ -212,7 +198,7 @@ func (s *GRPCGatewayServer) Start(
 		)
 	}
 
-	handler, err := buildGatewayHTTPHandler(
+	handler, err := s.buildGatewayHTTPHandler(
 		gatewayMux,
 		s.configs.Swagger,
 	)
