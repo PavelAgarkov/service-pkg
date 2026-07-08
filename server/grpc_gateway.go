@@ -21,14 +21,19 @@ import (
 
 type SwaggerConfig struct {
 	Enabled bool
+	APIs    []SwaggerAPIConfig
+}
 
-	// URL Swagger UI.
+type SwaggerAPIConfig struct {
+	Name string
+
+	// Например: /swagger/template/
 	UIPath string
 
-	// URL, по которому клиент получит JSON-спецификацию.
+	// Например: /swagger/template/api.swagger.json
 	JSONPath string
 
-	// Файл на диске.
+	// Например: ./protobuf/template.swagger.json
 	JSONFile string
 }
 
@@ -109,30 +114,143 @@ func (s *GRPCGatewayServer) buildGatewayHTTPHandler(
 		return gatewayMux, nil
 	}
 
+	if len(config.APIs) == 0 {
+		return nil, errors.New(
+			"swagger is enabled, but no Swagger APIs are configured",
+		)
+	}
+
+	if err := validateSwaggerConfig(config); err != nil {
+		return nil, err
+	}
+
 	rootMux := http.NewServeMux()
 
-	if s.configs.Swagger.Enabled {
+	for _, api := range config.APIs {
 		rootMux.Handle(
-			config.JSONPath,
-			s.swaggerJSONHandler(config.JSONFile),
+			api.JSONPath,
+			s.swaggerJSONHandler(api.JSONFile),
 		)
 
 		rootMux.Handle(
-			config.UIPath,
+			api.UIPath,
 			httpSwagger.Handler(
-				httpSwagger.URL(config.JSONPath),
+				httpSwagger.URL(api.JSONPath),
 			),
 		)
 	}
 
-	// grpc-gateway должен регистрироваться последним
-	// как fallback для остальных HTTP-путей.
+	// grpc-gateway используется как fallback.
 	rootMux.Handle("/", gatewayMux)
 
 	return rootMux, nil
 }
 
-func (s *GRPCGatewayServer) swaggerJSONHandler(filename string) http.Handler {
+func validateSwaggerConfig(config SwaggerConfig) error {
+	registeredPaths := make(map[string]string, len(config.APIs)*2)
+
+	for index, api := range config.APIs {
+		if err := validateSwaggerAPIConfig(api); err != nil {
+			return fmt.Errorf(
+				"validate Swagger API at index %d: %w",
+				index,
+				err,
+			)
+		}
+
+		if owner, exists := registeredPaths[api.UIPath]; exists {
+			return fmt.Errorf(
+				"Swagger UI path %q for API %q is already used by API %q",
+				api.UIPath,
+				api.Name,
+				owner,
+			)
+		}
+
+		registeredPaths[api.UIPath] = api.Name
+
+		if owner, exists := registeredPaths[api.JSONPath]; exists {
+			return fmt.Errorf(
+				"Swagger JSON path %q for API %q is already used by API %q",
+				api.JSONPath,
+				api.Name,
+				owner,
+			)
+		}
+
+		registeredPaths[api.JSONPath] = api.Name
+	}
+
+	return nil
+}
+
+func validateSwaggerAPIConfig(config SwaggerAPIConfig) error {
+	if config.Name == "" {
+		return errors.New("swagger API name is required")
+	}
+
+	if config.UIPath == "" {
+		return fmt.Errorf(
+			"swagger UI path is required for API %q",
+			config.Name,
+		)
+	}
+
+	if config.JSONPath == "" {
+		return fmt.Errorf(
+			"swagger JSON path is required for API %q",
+			config.Name,
+		)
+	}
+
+	if config.JSONFile == "" {
+		return fmt.Errorf(
+			"swagger JSON file is required for API %q",
+			config.Name,
+		)
+	}
+
+	if !strings.HasPrefix(config.UIPath, "/") {
+		return fmt.Errorf(
+			"swagger UI path for API %q must start with /",
+			config.Name,
+		)
+	}
+
+	if !strings.HasSuffix(config.UIPath, "/") {
+		return fmt.Errorf(
+			"swagger UI path for API %q must end with /",
+			config.Name,
+		)
+	}
+
+	if !strings.HasPrefix(config.JSONPath, "/") {
+		return fmt.Errorf(
+			"swagger JSON path for API %q must start with /",
+			config.Name,
+		)
+	}
+
+	if strings.HasSuffix(config.JSONPath, "/") {
+		return fmt.Errorf(
+			"swagger JSON path for API %q must not end with /",
+			config.Name,
+		)
+	}
+
+	if config.UIPath == config.JSONPath {
+		return fmt.Errorf(
+			"swagger UI path and JSON path for API %q must be different",
+			config.Name,
+		)
+	}
+
+	return nil
+}
+
+func (s *GRPCGatewayServer) swaggerJSONHandler(
+	filename string,
+) http.Handler {
 	return http.HandlerFunc(func(
 		writer http.ResponseWriter,
 		request *http.Request,
@@ -140,11 +258,13 @@ func (s *GRPCGatewayServer) swaggerJSONHandler(filename string) http.Handler {
 		if request.Method != http.MethodGet &&
 			request.Method != http.MethodHead {
 			writer.Header().Set("Allow", "GET, HEAD")
+
 			http.Error(
 				writer,
 				http.StatusText(http.StatusMethodNotAllowed),
 				http.StatusMethodNotAllowed,
 			)
+
 			return
 		}
 
@@ -240,11 +360,14 @@ func (s *GRPCGatewayServer) Start(
 		)
 
 		if s.configs.Swagger.Enabled {
-			log.Printf(
-				"gRPC gateway Swagger UI: http://localhost%s%s",
-				s.configs.HTTPAddr,
-				s.configs.Swagger.UIPath,
-			)
+			for _, api := range s.configs.Swagger.APIs {
+				log.Printf(
+					"gRPC gateway Swagger UI %q: http://localhost%s%s",
+					api.Name,
+					s.configs.HTTPAddr,
+					api.UIPath,
+				)
+			}
 		}
 
 		serveErr := s.server.Serve(listener)
