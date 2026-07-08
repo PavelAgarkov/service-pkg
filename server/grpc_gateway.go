@@ -58,27 +58,18 @@ type GRPCGatewayConfigs struct {
 	Swagger SwaggerConfig
 }
 
-type RegisterGatewayFunc func(
-	ctx context.Context,
-	mux *runtime.ServeMux,
-	endpoint string,
-	opts []grpc.DialOption,
-) error
-
 type GRPCGatewayServer struct {
 	configs GRPCGatewayConfigs
 	server  *http.Server
 }
 
-func NewGRPCGatewayServer(
-	configs GRPCGatewayConfigs,
-) (*GRPCGatewayServer, error) {
+func NewGRPCGatewayServer(configs GRPCGatewayConfigs) (*GRPCGatewayServer, error) {
 	if configs.HTTPAddr == "" {
-		return nil, errors.New("grpc gateway HTTP address is required")
+		return nil, errors.New("grpcs gateway HTTP address is required")
 	}
 
 	if configs.GRPCEndpoint == "" {
-		return nil, errors.New("grpc gateway upstream endpoint is required")
+		return nil, errors.New("grpcs gateway upstream endpoint is required")
 	}
 
 	if configs.Network == "" {
@@ -106,18 +97,13 @@ func NewGRPCGatewayServer(
 	}, nil
 }
 
-func (s *GRPCGatewayServer) buildGatewayHTTPHandler(
-	gatewayMux *runtime.ServeMux,
-	config SwaggerConfig,
-) (http.Handler, error) {
+func (s *GRPCGatewayServer) buildGatewayHTTPHandler(gatewayMux *runtime.ServeMux, config SwaggerConfig) (http.Handler, error) {
 	if !config.Enabled {
 		return gatewayMux, nil
 	}
 
 	if len(config.APIs) == 0 {
-		return nil, errors.New(
-			"swagger is enabled, but no Swagger APIs are configured",
-		)
+		return nil, errors.New("swagger is enabled, but no Swagger APIs are configured")
 	}
 
 	if err := validateSwaggerConfig(config); err != nil {
@@ -127,20 +113,10 @@ func (s *GRPCGatewayServer) buildGatewayHTTPHandler(
 	rootMux := http.NewServeMux()
 
 	for _, api := range config.APIs {
-		rootMux.Handle(
-			api.JSONPath,
-			s.swaggerJSONHandler(api.JSONFile),
-		)
-
-		rootMux.Handle(
-			api.UIPath,
-			httpSwagger.Handler(
-				httpSwagger.URL(api.JSONPath),
-			),
-		)
+		rootMux.Handle(api.JSONPath, s.swaggerJSONHandler(api.JSONFile))
+		rootMux.Handle(api.UIPath, httpSwagger.Handler(httpSwagger.URL(api.JSONPath)))
 	}
 
-	// grpc-gateway используется как fallback.
 	rootMux.Handle("/", gatewayMux)
 
 	return rootMux, nil
@@ -151,31 +127,17 @@ func validateSwaggerConfig(config SwaggerConfig) error {
 
 	for index, api := range config.APIs {
 		if err := validateSwaggerAPIConfig(api); err != nil {
-			return fmt.Errorf(
-				"validate Swagger API at index %d: %w",
-				index,
-				err,
-			)
+			return fmt.Errorf("validate Swagger API at index %d: %w", index, err)
 		}
 
 		if owner, exists := registeredPaths[api.UIPath]; exists {
-			return fmt.Errorf(
-				"Swagger UI path %q for API %q is already used by API %q",
-				api.UIPath,
-				api.Name,
-				owner,
-			)
+			return fmt.Errorf("swagger UI path %q for API %q is already used by API %q", api.UIPath, api.Name, owner)
 		}
 
 		registeredPaths[api.UIPath] = api.Name
 
 		if owner, exists := registeredPaths[api.JSONPath]; exists {
-			return fmt.Errorf(
-				"Swagger JSON path %q for API %q is already used by API %q",
-				api.JSONPath,
-				api.Name,
-				owner,
-			)
+			return fmt.Errorf("swagger JSON path %q for API %q is already used by API %q", api.JSONPath, api.Name, owner)
 		}
 
 		registeredPaths[api.JSONPath] = api.Name
@@ -190,99 +152,55 @@ func validateSwaggerAPIConfig(config SwaggerAPIConfig) error {
 	}
 
 	if config.UIPath == "" {
-		return fmt.Errorf(
-			"swagger UI path is required for API %q",
-			config.Name,
-		)
+		return fmt.Errorf("swagger UI path is required for API %q", config.Name)
 	}
 
 	if config.JSONPath == "" {
-		return fmt.Errorf(
-			"swagger JSON path is required for API %q",
-			config.Name,
-		)
+		return fmt.Errorf("swagger JSON path is required for API %q", config.Name)
 	}
 
 	if config.JSONFile == "" {
-		return fmt.Errorf(
-			"swagger JSON file is required for API %q",
-			config.Name,
-		)
+		return fmt.Errorf("swagger JSON file is required for API %q", config.Name)
 	}
 
 	if !strings.HasPrefix(config.UIPath, "/") {
-		return fmt.Errorf(
-			"swagger UI path for API %q must start with /",
-			config.Name,
-		)
+		return fmt.Errorf("swagger UI path for API %q must start with /", config.Name)
 	}
 
 	if !strings.HasSuffix(config.UIPath, "/") {
-		return fmt.Errorf(
-			"swagger UI path for API %q must end with /",
-			config.Name,
-		)
+		return fmt.Errorf("swagger UI path for API %q must end with /", config.Name)
 	}
 
 	if !strings.HasPrefix(config.JSONPath, "/") {
-		return fmt.Errorf(
-			"swagger JSON path for API %q must start with /",
-			config.Name,
-		)
+		return fmt.Errorf("swagger JSON path for API %q must start with /", config.Name)
 	}
 
 	if strings.HasSuffix(config.JSONPath, "/") {
-		return fmt.Errorf(
-			"swagger JSON path for API %q must not end with /",
-			config.Name,
-		)
+		return fmt.Errorf("swagger JSON path for API %q must not end with /", config.Name)
 	}
 
 	if config.UIPath == config.JSONPath {
-		return fmt.Errorf(
-			"swagger UI path and JSON path for API %q must be different",
-			config.Name,
-		)
+		return fmt.Errorf("swagger UI path and JSON path for API %q must be different", config.Name)
 	}
 
 	return nil
 }
 
-func (s *GRPCGatewayServer) swaggerJSONHandler(
-	filename string,
-) http.Handler {
-	return http.HandlerFunc(func(
-		writer http.ResponseWriter,
-		request *http.Request,
-	) {
-		if request.Method != http.MethodGet &&
-			request.Method != http.MethodHead {
+func (s *GRPCGatewayServer) swaggerJSONHandler(filename string) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet && request.Method != http.MethodHead {
 			writer.Header().Set("Allow", "GET, HEAD")
 
-			http.Error(
-				writer,
-				http.StatusText(http.StatusMethodNotAllowed),
-				http.StatusMethodNotAllowed,
-			)
-
+			http.Error(writer, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 			return
 		}
 
-		writer.Header().Set(
-			"Content-Type",
-			"application/json; charset=utf-8",
-		)
-
+		writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 		http.ServeFile(writer, request, filename)
 	})
 }
 
-type GatewayRegisterFunc func(
-	ctx context.Context,
-	mux *runtime.ServeMux,
-	endpoint string,
-	opts []grpc.DialOption,
-) error
+type GatewayRegisterFunc func(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error
 
 func (s *GRPCGatewayServer) Start(
 	ctx context.Context,
@@ -291,9 +209,7 @@ func (s *GRPCGatewayServer) Start(
 	muxOptions []runtime.ServeMuxOption,
 ) (func(), error) {
 	if registerFunc == nil {
-		return nil, errors.New(
-			"grpc gateway registration function is required",
-		)
+		return nil, errors.New("grpcs gateway registration function is required")
 	}
 
 	if len(dialOptions) == 0 {
@@ -306,27 +222,13 @@ func (s *GRPCGatewayServer) Start(
 
 	gatewayMux := runtime.NewServeMux(muxOptions...)
 
-	if err := registerFunc(
-		ctx,
-		gatewayMux,
-		s.configs.GRPCEndpoint,
-		dialOptions,
-	); err != nil {
-		return nil, fmt.Errorf(
-			"register gateway handlers: %w",
-			err,
-		)
+	if err := registerFunc(ctx, gatewayMux, s.configs.GRPCEndpoint, dialOptions); err != nil {
+		return nil, fmt.Errorf("register gateway handlers: %w", err)
 	}
 
-	handler, err := s.buildGatewayHTTPHandler(
-		gatewayMux,
-		s.configs.Swagger,
-	)
+	handler, err := s.buildGatewayHTTPHandler(gatewayMux, s.configs.Swagger)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"build gateway HTTP handler: %w",
-			err,
-		)
+		return nil, fmt.Errorf("build gateway HTTP handler: %w", err)
 	}
 
 	s.server = &http.Server{
@@ -339,44 +241,23 @@ func (s *GRPCGatewayServer) Start(
 		MaxHeaderBytes:    s.configs.MaxHeaderBytes,
 	}
 
-	listener, err := net.Listen(
-		s.configs.Network,
-		s.configs.HTTPAddr,
-	)
+	listener, err := net.Listen(s.configs.Network, s.configs.HTTPAddr)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"listen grpc gateway on %s/%s: %w",
-			s.configs.Network,
-			s.configs.HTTPAddr,
-			err,
-		)
+		return nil, fmt.Errorf("listen grpcs gateway on %s/%s: %w", s.configs.Network, s.configs.HTTPAddr, err)
 	}
 
 	utils.GoRecover(ctx, func(ctx context.Context) {
-		log.Printf(
-			"gRPC gateway started on %s, upstream %s",
-			s.configs.HTTPAddr,
-			s.configs.GRPCEndpoint,
-		)
+		log.Printf("gRPC gateway started on %s, upstream %s", s.configs.HTTPAddr, s.configs.GRPCEndpoint)
 
 		if s.configs.Swagger.Enabled {
 			for _, api := range s.configs.Swagger.APIs {
-				log.Printf(
-					"gRPC gateway Swagger UI %q: http://localhost%s%s",
-					api.Name,
-					s.configs.HTTPAddr,
-					api.UIPath,
-				)
+				log.Printf("gRPC gateway Swagger UI %q: http://localhost%s%s", api.Name, s.configs.HTTPAddr, api.UIPath)
 			}
 		}
 
 		serveErr := s.server.Serve(listener)
-		if serveErr != nil &&
-			!errors.Is(serveErr, http.ErrServerClosed) {
-			log.Printf(
-				"gRPC gateway stopped with error: %v",
-				serveErr,
-			)
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			log.Printf("gRPC gateway stopped with error: %v", serveErr)
 		}
 	})
 
@@ -390,10 +271,7 @@ func (s *GRPCGatewayServer) shutdown() {
 
 	log.Printf("Shutting down gRPC gateway on %s", s.configs.HTTPAddr)
 
-	ctx, cancel := context.WithTimeout(
-		context.Background(),
-		s.configs.ShutdownTimeout,
-	)
+	ctx, cancel := context.WithTimeout(context.Background(), s.configs.ShutdownTimeout)
 	defer cancel()
 
 	if err := s.server.Shutdown(ctx); err != nil {
