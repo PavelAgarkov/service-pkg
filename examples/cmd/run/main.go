@@ -9,10 +9,10 @@ import (
 
 	"github.com/PavelAgarkov/service-pkg/kernel"
 	"github.com/PavelAgarkov/service-pkg/locker"
+	redis2 "github.com/PavelAgarkov/service-pkg/redis"
 	"github.com/PavelAgarkov/service-pkg/scheduler"
 	"github.com/PavelAgarkov/service-pkg/server"
 	"github.com/PavelAgarkov/service-pkg/watchdog"
-	"github.com/go-redis/redis/v8"
 )
 
 func main() {
@@ -27,8 +27,8 @@ func main() {
 			func(ctx context.Context, krl *kernel.Kernel) error {
 				storage := server.NewPreShutdownState(
 					true,
-					10*time.Second,
-					10*time.Second,
+					1*time.Second,
+					1*time.Second,
 				)
 				httpStop := server.CreateHTTPChiServer(
 					func(s *server.HTTPServerChi) {
@@ -60,7 +60,7 @@ func main() {
 							w.WriteHeader(200)
 						})
 					},
-					":8080",
+					":8083",
 					storage,
 				)
 				krl.RegisterShutdown("http", httpStop, kernel.HighPriority)
@@ -82,7 +82,13 @@ func main() {
 				}, kernel.MediumPriority)
 
 				// Лидер‑элекция (при необходимости)
-				rdb := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
+				//rdb := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
+				//rdb, err := redis2.NewRedisClient("redis://:qwerty12345@localhost:6379")
+				rdb, err := redis2.NewRedisClient("redis://:qwerty12345@localhost:26379?master_name=mymaster&password=qwerty12345")
+				if err != nil {
+					log.Printf("failed to create redis client: %v", err)
+					return err
+				}
 				lck := locker.NewLocker(rdb)
 				wd := watchdog.NewRedisWatchdogLeader(ctx, lck)
 
